@@ -1,0 +1,161 @@
+```{r}
+#Volcano Plot
+
+library(EnhancedVolcano)
+library(nichenetr)
+library(tibble)
+
+Idents(data.integrated_inj) <- "cellid"
+seurat_obj_receiver <- subset(data.integrated_inj,idents="Satellite Cells")
+Idents(seurat_obj_receiver) <- "sample"
+DE_table_receiver =  FindMarkers(object = seurat_obj_receiver, ident.1 = "Depleted", ident.2 = "Control",logfc.threshold = 0, min.pct = 0.1, verbose = T) %>% rownames_to_column("gene")
+
+pval <- DE_table_receiver[,c(2)]
+adj_p <- p.adjust(pval, method = "BH", n = length(pval))
+
+DE_table_receiver$adj_pval <- adj_p
+
+
+EnhancedVolcano(DE_table_receiver,
+                
+                  title=("Satellite Cells"),
+    #lab = DE_table_receiver$gene,
+     lab = rep(NA, nrow(DE_table_receiver)), 
+    x = 'avg_log2FC',
+    y = 'adj_pval',
+      pCutoff = 5e-02,
+
+  FCcutoff = 0.5,
+  xlim=c(-10,10),
+  #ylim=c(-0,20),
+  xlab = bquote(~Log[2]~ 'fold change'),
+ylab = bquote('-'~Log[10]~ 'adj p-value'),  
+  legendLabels=c('Not sig.','Not sig.',bquote('DEGs'~' '~Log[2]~'FC <= 0.5'),
+      'DEGs'~' '~Log[2]~'FC > 0.5'),
+col=c('grey30', 'grey30', 'royalblue', 'red3'),
+legendPosition = 'none',
+    #legendPosition = 'right',
+ pointSize = 3.0,
+    labSize = 8,
+axisLabSize = 30
+  )+ theme(
+
+  axis.text.x = element_text(color = "black"),
+  axis.text.y = element_text(color = "black")
+)
+
+```
+
+
+```{r}
+#Gene ontology analysis - top10 up-/down-regulated pathways
+
+library(clusterProfiler)
+library(org.Mm.eg.db)
+
+top50 <- FindMarkers(SC_inj_sub,ident.1="Depleted",ident.2="Control",min.pct=0.1,logfc.threshold = 0.5,group.by="sample")%>% rownames_to_column("gene")
+
+pval <- top50[,c(2)]
+adj_p <- p.adjust(pval, method = "BH", n = length(pval))
+
+top50$adj_pval <- adj_p
+
+top50 <- top50 %>% filter(adj_pval <= 0.05)
+
+#top50 <- top50 %>%  top_n(n = 50, wt = avg_log2FC)
+
+top50_up <- top50 %>% filter(avg_log2FC > 0)
+top50_down <- top50 %>% filter(avg_log2FC < 0)
+
+GO_results_up <- enrichGO(gene=top50_up$gene, OrgDb = "org.Mm.eg.db", keyType="SYMBOL",ont="BP")
+GO_results_down <- enrichGO(gene=top50_down$gene, OrgDb = "org.Mm.eg.db", keyType="SYMBOL",ont="BP")
+
+GO_results_up@result$p.adjust_log <- -log10(GO_results_up@result$p.adjust)
+GO_results_down@result$p.adjust_log <- -log10(GO_results_down@result$p.adjust)
+
+topGO_up <- GO_results_up@result[1:10,] # Select the top 10 terms
+topGO_down <- GO_results_down@result[1:10,]
+
+# Create the bar plot using ggplot2
+ggplot(topGO_up, aes(x = reorder(Description, p.adjust_log), y = p.adjust_log)) +
+  geom_bar(stat = "identity",fill=rgb(85, 85, 85, maxColorValue = 255),width=0.6) +
+  coord_flip() +
+xlab(NULL)+
+  ylab("-log10(adj p-value)") +
+  #labs(title = "Up-regulated in Neutrophils, Depleted vs. Control")+
+  theme(
+    panel.background = element_blank(),  
+    panel.grid.major = element_blank(),  
+    panel.grid.minor = element_blank(),    
+      axis.text.x = element_text(color = "black",size=18), 
+    axis.text.y = element_text(color = "black",size=18),
+     axis.title.x = element_text(size = 16),  
+    axis.title.y = element_text(size = 16) ,
+   # plot.title = element_text(size = 20, face = "bold", color = "black", hjust = 0.5)
+  )
+
+
+ggplot(topGO_down, aes(x = reorder(Description, p.adjust_log), y = p.adjust_log)) +
+  geom_bar(stat = "identity",fill=rgb(85, 85, 85, maxColorValue = 255),width=0.6) +
+  coord_flip() +
+xlab(NULL)+
+  ylab("-log10(adj p-value)") +
+  #labs(title = "Up-regulated in Neutrophils, Depleted vs. Control")+
+  theme(
+    panel.background = element_blank(),  
+    panel.grid.major = element_blank(),  
+    panel.grid.minor = element_blank(),    
+      axis.text.x = element_text(color = "black",size=18), 
+    axis.text.y = element_text(color = "black",size=18),
+     axis.title.x = element_text(size = 16),  
+    axis.title.y = element_text(size = 16) ,
+   # plot.title = element_text(size = 20, face = "bold", color = "black", hjust = 0.5)
+  )
+
+```
+
+
+```{r fig.height=4, fig.width=13}
+# Gene ontology analysis - pathway containing gene of interest
+#This example shows how to infer pathways enriched in cluster 2 of satellite cells in homeostatic muscle (Fig. S5A)
+#Run script "all_reclustering first"
+
+top50 <- SC_homeo_markers_all_RNA_subset %>% group_by(cluster) %>% top_n(n = 50, wt = avg_log2FC)
+
+
+test <- top50$gene[82:131]
+
+
+
+GO_results <- enrichGO(gene=test, OrgDb = "org.Mm.eg.db", keyType="SYMBOL",ont="BP")
+
+
+
+GO_results@result$p.adjust_log <- -log10(GO_results@result$p.adjust)
+
+
+topGO <- GO_results@result[1:10,] # Select the top 10 terms
+
+
+# Create the bar plot using ggplot2
+ggplot(topGO, aes(x = reorder(Description, p.adjust_log), y = p.adjust_log)) +
+  geom_bar(stat = "identity",fill=rgb(85, 85, 85, maxColorValue = 255),width=0.6) +
+  coord_flip() +
+xlab(NULL)+
+  ylab("-log10(adj p-value)") +
+  #labs(title = "Up-regulated in Neutrophils, Depleted vs. Control")+
+  theme(
+    panel.background = element_blank(),  
+    panel.grid.major = element_blank(),  
+    panel.grid.minor = element_blank(),    
+      axis.text.x = element_text(color = "black",size=16), 
+    axis.text.y = element_text(color = "black",size=16),
+     axis.title.x = element_text(size = 16),  
+    axis.title.y = element_text(size = 16) ,
+   # plot.title = element_text(size = 20, face = "bold", color = "black", hjust = 0.5)
+  )
+
+
+```
+
+
